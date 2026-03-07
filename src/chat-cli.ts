@@ -18,11 +18,21 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 
-import { CONTAINER_IMAGE, DATA_DIR, GROUPS_DIR, IDLE_TIMEOUT, TIMEZONE } from './config.js';
+import {
+  CONTAINER_IMAGE,
+  DATA_DIR,
+  GROUPS_DIR,
+  IDLE_TIMEOUT,
+  TIMEZONE,
+} from './config.js';
 import { initDatabase } from './db.js';
 import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
-import { ContainerInput, ContainerOutput, runContainerAgent } from './container-runner.js';
+import {
+  ContainerInput,
+  ContainerOutput,
+  runContainerAgent,
+} from './container-runner.js';
 import { RegisteredGroup } from './types.js';
 import { getAllRegisteredGroups, getSession, setSession } from './db.js';
 
@@ -47,9 +57,13 @@ function printSystem(text: string): void {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.length === 0) {
-    console.log('Usage: npx tsx src/chat-cli.ts <group-folder> [initial-message]');
+    console.log(
+      'Usage: npx tsx src/chat-cli.ts <group-folder> [initial-message]',
+    );
     console.log('');
-    console.log('  group-folder   Folder name of the registered group (e.g. test-agent)');
+    console.log(
+      '  group-folder   Folder name of the registered group (e.g. test-agent)',
+    );
     console.log('  initial-message   Optional first message to send');
     process.exit(1);
   }
@@ -84,7 +98,9 @@ async function main(): Promise<void> {
   printSystem(`Group: ${group.name} (${chatJid})`);
   printSystem(`Model: ${group.model || 'default'}`);
   if (group.containerConfig?.mcpServers) {
-    printSystem(`MCP servers: ${Object.keys(group.containerConfig.mcpServers).join(', ')}`);
+    printSystem(
+      `MCP servers: ${Object.keys(group.containerConfig.mcpServers).join(', ')}`,
+    );
   }
 
   const rl = readline.createInterface({
@@ -160,7 +176,10 @@ async function main(): Promise<void> {
     }
   };
 
+  let closed = false;
+
   const promptUser = () => {
+    if (closed) return;
     rl.question(`${BLUE}You:${RESET} `, async (input) => {
       const trimmed = input.trim();
       if (!trimmed) {
@@ -204,6 +223,7 @@ async function main(): Promise<void> {
 
   // Handle Ctrl+C
   rl.on('close', () => {
+    closed = true;
     closeContainer();
     printSystem('Bye!');
     setTimeout(() => process.exit(0), 1000);

@@ -6,6 +6,8 @@ import { ChildProcess, exec, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
+import { chownSync } from 'fs';
+
 import {
   CONTAINER_IMAGE,
   CONTAINER_MAX_OUTPUT_SIZE,
@@ -50,6 +52,26 @@ export interface ContainerOutput {
   error?: string;
 }
 
+// Container node user uid:gid
+const CONTAINER_UID = 1000;
+const CONTAINER_GID = 1000;
+
+/**
+ * Ensure a directory is writable by the container's node user (uid 1000).
+ * Only needed when the host runs as root (uid 0), since root-created dirs
+ * are not writable by the non-root container user.
+ */
+function ensureContainerWritable(dirPath: string): void {
+  const hostUid = process.getuid?.();
+  if (hostUid === 0) {
+    try {
+      chownSync(dirPath, CONTAINER_UID, CONTAINER_GID);
+    } catch {
+      // Best-effort — may fail on some filesystems
+    }
+  }
+}
+
 interface VolumeMount {
   hostPath: string;
   containerPath: string;
@@ -88,6 +110,7 @@ function buildVolumeMounts(
     }
 
     // Main also gets its group folder as the working directory
+    ensureContainerWritable(groupDir);
     mounts.push({
       hostPath: groupDir,
       containerPath: '/workspace/group',
@@ -95,6 +118,7 @@ function buildVolumeMounts(
     });
   } else {
     // Other groups only get their own folder
+    ensureContainerWritable(groupDir);
     mounts.push({
       hostPath: groupDir,
       containerPath: '/workspace/group',
@@ -122,6 +146,9 @@ function buildVolumeMounts(
     '.claude',
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
+  ensureContainerWritable(groupSessionsDir);
+  // Also chown the parent (sessions/{folder}) so the container can create siblings
+  ensureContainerWritable(path.dirname(groupSessionsDir));
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
   if (!fs.existsSync(settingsFile)) {
     fs.writeFileSync(
@@ -169,6 +196,10 @@ function buildVolumeMounts(
   fs.mkdirSync(path.join(groupIpcDir, 'messages'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'tasks'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'input'), { recursive: true });
+  ensureContainerWritable(groupIpcDir);
+  ensureContainerWritable(path.join(groupIpcDir, 'messages'));
+  ensureContainerWritable(path.join(groupIpcDir, 'tasks'));
+  ensureContainerWritable(path.join(groupIpcDir, 'input'));
   mounts.push({
     hostPath: groupIpcDir,
     containerPath: '/workspace/ipc',
@@ -193,6 +224,7 @@ function buildVolumeMounts(
   if (!fs.existsSync(groupAgentRunnerDir) && fs.existsSync(agentRunnerSrc)) {
     fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });
   }
+  ensureContainerWritable(groupAgentRunnerDir);
   mounts.push({
     hostPath: groupAgentRunnerDir,
     containerPath: '/app/src',
