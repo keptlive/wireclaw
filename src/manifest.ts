@@ -259,13 +259,18 @@ async function sendIntroEmail(
   manifest: GroupManifest,
   agentId: string,
 ): Promise<void> {
-  const env = readEnvFile(['AGENTWIRE_API_KEY', 'AGENTWIRE_URL', 'AGENTWIRE_OWNER_EMAIL']);
+  const env = readEnvFile([
+    'AGENTWIRE_API_KEY',
+    'AGENTWIRE_URL',
+    'AGENTWIRE_OWNER_EMAIL',
+  ]);
   if (!env.AGENTWIRE_API_KEY || !env.AGENTWIRE_OWNER_EMAIL) return;
 
   const url = env.AGENTWIRE_URL || 'https://agentwire.run';
   const handle = manifest.identity.handle;
   const groupName = manifest.identity.group_name;
-  const description = manifest.identity.description || 'No description provided.';
+  const description =
+    manifest.identity.description || 'No description provided.';
   const model = manifest.context?.model || 'default';
   const mcpServers = manifest.dependencies?.mcp_servers
     ? Object.keys(manifest.dependencies.mcp_servers).join(', ')
@@ -288,7 +293,7 @@ async function sendIntroEmail(
     const res = await fetch(`${url}/api/agents/${agentId}/send-email`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${env.AGENTWIRE_API_KEY}`,
+        Authorization: `Bearer ${env.AGENTWIRE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -298,10 +303,16 @@ async function sendIntroEmail(
       }),
     });
     if (res.ok) {
-      logger.info({ handle, to: env.AGENTWIRE_OWNER_EMAIL }, 'Intro email sent');
+      logger.info(
+        { handle, to: env.AGENTWIRE_OWNER_EMAIL },
+        'Intro email sent',
+      );
     } else {
       const err = await res.text();
-      logger.warn({ handle, status: res.status, err }, 'Failed to send intro email');
+      logger.warn(
+        { handle, status: res.status, err },
+        'Failed to send intro email',
+      );
     }
   } catch (err) {
     logger.warn({ handle, err }, 'Intro email API call failed');
