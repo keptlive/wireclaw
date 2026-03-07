@@ -18,29 +18,22 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 
+import { DATA_DIR } from './config.js';
 import {
-  CONTAINER_IMAGE,
-  DATA_DIR,
-  GROUPS_DIR,
-  IDLE_TIMEOUT,
-  TIMEZONE,
-} from './config.js';
-import { initDatabase } from './db.js';
-import { readEnvFile } from './env.js';
-import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
-import {
-  ContainerInput,
   ContainerOutput,
   runContainerAgent,
 } from './container-runner.js';
+import { getAllRegisteredGroups, getSession, initDatabase, setSession } from './db.js';
 import { RegisteredGroup } from './types.js';
-import { getAllRegisteredGroups, getSession, setSession } from './db.js';
 
 const BLUE = '\x1b[34m';
 const GREEN = '\x1b[32m';
 const DIM = '\x1b[2m';
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
+
+// Max input size: 100KB. Prevents accidental paste bombs from filling disk/memory.
+const MAX_INPUT_BYTES = 100 * 1024;
 
 function printAgent(text: string): void {
   // Strip <internal>...</internal> blocks
@@ -183,6 +176,12 @@ async function main(): Promise<void> {
     rl.question(`${BLUE}You:${RESET} `, async (input) => {
       const trimmed = input.trim();
       if (!trimmed) {
+        promptUser();
+        return;
+      }
+
+      if (Buffer.byteLength(trimmed) > MAX_INPUT_BYTES) {
+        printSystem(`Input too large (${Buffer.byteLength(trimmed)} bytes, max ${MAX_INPUT_BYTES}). Truncate and retry.`);
         promptUser();
         return;
       }
