@@ -215,6 +215,7 @@ export function manifestToRegisteredGroup(
     isMain,
     agentwireAgentId: opts.agentwireAgentId,
     model: manifest.context?.model,
+    skills: manifest.skills,
   };
 
   return { jid, group };

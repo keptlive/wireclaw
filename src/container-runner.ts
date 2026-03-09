@@ -191,12 +191,20 @@ function buildVolumeMounts(
   }
 
   // Sync skills from container/skills/ into each group's .claude/skills/
+  // Only skills declared in the manifest are synced. Use "*" to include all.
+  // No skills declared = no skills synced.
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');
   const skillsDst = path.join(groupSessionsDir, 'skills');
-  if (fs.existsSync(skillsSrc)) {
+  // Clean stale skills from previous syncs
+  if (fs.existsSync(skillsDst)) {
+    fs.rmSync(skillsDst, { recursive: true });
+  }
+  if (fs.existsSync(skillsSrc) && group.skills && group.skills.length > 0) {
+    const includeAll = group.skills.includes('*');
     for (const skillDir of fs.readdirSync(skillsSrc)) {
       const srcDir = path.join(skillsSrc, skillDir);
       if (!fs.statSync(srcDir).isDirectory()) continue;
+      if (!includeAll && !group.skills.includes(skillDir)) continue;
       const dstDir = path.join(skillsDst, skillDir);
       fs.cpSync(srcDir, dstDir, { recursive: true });
     }
@@ -746,6 +754,59 @@ export function writeTasksSnapshot(
 
   const tasksFile = path.join(groupIpcDir, 'current_tasks.json');
   fs.writeFileSync(tasksFile, JSON.stringify(filteredTasks, null, 2));
+}
+
+/**
+ * Write skills snapshot for the container to read.
+ * Main sees all groups' skills; others see only their own.
+ */
+export function writeSkillsSnapshot(
+  groupFolder: string,
+  isMain: boolean,
+  registeredGroups: Record<string, RegisteredGroup>,
+): void {
+  const groupIpcDir = resolveGroupIpcPath(groupFolder);
+  fs.mkdirSync(groupIpcDir, { recursive: true });
+
+  // List all available skills from container/skills/
+  const skillsSrcDir = path.join(process.cwd(), 'container', 'skills');
+  const availableSkills: string[] = [];
+  if (fs.existsSync(skillsSrcDir)) {
+    for (const entry of fs.readdirSync(skillsSrcDir)) {
+      if (fs.statSync(path.join(skillsSrcDir, entry)).isDirectory()) {
+        availableSkills.push(entry);
+      }
+    }
+  }
+
+  const groupSkills: Array<{
+    handle: string;
+    name: string;
+    skills: string[];
+  }> = [];
+
+  for (const group of Object.values(registeredGroups)) {
+    if (!isMain && group.folder !== groupFolder) continue;
+    groupSkills.push({
+      handle: group.folder,
+      name: group.name,
+      skills: group.skills || [],
+    });
+  }
+
+  const skillsFile = path.join(groupIpcDir, 'skills_snapshot.json');
+  fs.writeFileSync(
+    skillsFile,
+    JSON.stringify(
+      {
+        availableSkills,
+        groups: groupSkills,
+        lastSync: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 export interface AvailableGroup {

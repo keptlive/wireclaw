@@ -329,6 +329,8 @@ export async function processTaskIpc(
     handle?: string;
     manifest_yaml?: string;
     system_prompt?: string;
+    // For update_skills
+    skills?: string[];
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -704,6 +706,44 @@ export async function processTaskIpc(
         logger.warn(
           { handle: data.handle },
           'create_agent: invalid or missing handle',
+        );
+      }
+      break;
+
+    case 'update_skills':
+      // Main only: update another group's skills list
+      if (!isMain) {
+        logger.warn(
+          { sourceGroup },
+          'Unauthorized update_skills attempt blocked',
+        );
+        break;
+      }
+
+      if (data.handle && Array.isArray(data.skills)) {
+        // Find the group by handle (folder)
+        const allGroups = deps.registeredGroups();
+        const targetEntry = Object.entries(allGroups).find(
+          ([, g]) => g.folder === data.handle,
+        );
+        if (targetEntry) {
+          const [targetJid, targetGroup] = targetEntry;
+          targetGroup.skills = data.skills;
+          deps.registerGroup(targetJid, targetGroup);
+          logger.info(
+            { handle: data.handle, skills: data.skills },
+            'Skills updated for group',
+          );
+        } else {
+          logger.warn(
+            { handle: data.handle },
+            'update_skills: group not found',
+          );
+        }
+      } else {
+        logger.warn(
+          { data },
+          'update_skills: missing handle or skills array',
         );
       }
       break;

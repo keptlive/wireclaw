@@ -18,6 +18,7 @@ import {
   ContainerOutput,
   runContainerAgent,
   writeGroupsSnapshot,
+  writeSkillsSnapshot,
   writeTasksSnapshot,
 } from './container-runner.js';
 import {
@@ -311,6 +312,9 @@ async function runAgent(
     availableGroups,
     new Set(Object.keys(registeredGroups)),
   );
+
+  // Update skills snapshot (main sees all groups' skills)
+  writeSkillsSnapshot(group.folder, isMain, registeredGroups);
 
   // Wrap onOutput to track session ID from streamed results
   const wrappedOnOutput = onOutput

@@ -334,6 +334,72 @@ Use available_groups.json to find the JID for a group. The folder name must be c
 );
 
 server.tool(
+  'manage_skills',
+  `View and update skills for any agent group. Main group only.
+
+Read /workspace/ipc/skills_snapshot.json first to see available skills and each group's current skills.
+
+Use action "list" to see skills (no IPC write needed — just read the snapshot file).
+Use action "set" with a handle and skills array to update a group's skills.
+Use "*" in the skills array to give a group access to all available skills.
+Use an empty array to remove all skills from a group.
+
+Changes take effect on the group's next container invocation.`,
+  {
+    action: z.enum(['list', 'set']).describe('"list" to view, "set" to update'),
+    handle: z.string().optional().describe('Target group handle (required for "set")'),
+    skills: z.array(z.string()).optional().describe('New skills list (required for "set"). Use ["*"] for all.'),
+  },
+  async (args) => {
+    if (!isMain) {
+      return {
+        content: [{ type: 'text' as const, text: 'Only the main group can manage skills.' }],
+        isError: true,
+      };
+    }
+
+    if (args.action === 'list') {
+      const snapshotPath = path.join(IPC_DIR, 'skills_snapshot.json');
+      if (!fs.existsSync(snapshotPath)) {
+        return {
+          content: [{ type: 'text' as const, text: 'No skills snapshot found. Skills data will be available after next container invocation.' }],
+        };
+      }
+      const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf-8'));
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(snapshot, null, 2) }],
+      };
+    }
+
+    // action === 'set'
+    if (!args.handle || !args.skills) {
+      return {
+        content: [{ type: 'text' as const, text: 'handle and skills are required for "set" action.' }],
+        isError: true,
+      };
+    }
+
+    const data = {
+      type: 'update_skills',
+      handle: args.handle,
+      skills: args.skills,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(TASKS_DIR, data);
+
+    const skillsDesc = args.skills.includes('*')
+      ? 'all available skills'
+      : args.skills.length === 0
+        ? 'no skills'
+        : args.skills.join(', ');
+    return {
+      content: [{ type: 'text' as const, text: `Skills for "${args.handle}" updated to: ${skillsDesc}. Takes effect on next invocation.` }],
+    };
+  },
+);
+
+server.tool(
   'create_agent',
   `Create a new WireClaw agent from draft files in /workspace/shared/manifests/{handle}/. Main group only.
 
