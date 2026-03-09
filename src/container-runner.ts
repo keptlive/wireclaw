@@ -266,6 +266,11 @@ function buildVolumeMounts(
       fs.cpSync(srcDir, dstDir, { recursive: true });
     }
   }
+  // Ensure all copied skill files are readable by the container user
+  if (fs.existsSync(skillsDst)) {
+    ensureContainerWritable(skillsDst, true);
+  }
+
   mounts.push({
     hostPath: groupSessionsDir,
     containerPath: '/home/node/.claude',
@@ -811,6 +816,7 @@ export function writeTasksSnapshot(
 
   const tasksFile = path.join(groupIpcDir, 'current_tasks.json');
   fs.writeFileSync(tasksFile, JSON.stringify(filteredTasks, null, 2));
+  ensureContainerWritable(tasksFile);
 }
 
 /**
@@ -864,6 +870,7 @@ export function writeSkillsSnapshot(
       2,
     ),
   );
+  ensureContainerWritable(skillsFile);
 }
 
 export interface AvailableGroup {
@@ -902,4 +909,44 @@ export function writeGroupsSnapshot(
       2,
     ),
   );
+  ensureContainerWritable(groupsFile);
+}
+
+/**
+ * Write registered agents snapshot so the main agent can discover
+ * other agents by handle and communicate with them.
+ */
+export function writeRegisteredAgentsSnapshot(
+  groupFolder: string,
+  isMain: boolean,
+  registeredGroups: Record<string, RegisteredGroup>,
+): void {
+  if (!isMain) return; // Only main needs to discover other agents
+  const groupIpcDir = resolveGroupIpcPath(groupFolder);
+  fs.mkdirSync(groupIpcDir, { recursive: true });
+
+  const agents: Array<{
+    handle: string;
+    name: string;
+    jid: string;
+    agentwireAgentId?: string;
+    skills: string[];
+  }> = [];
+
+  for (const [jid, group] of Object.entries(registeredGroups)) {
+    agents.push({
+      handle: group.folder,
+      name: group.name,
+      jid,
+      agentwireAgentId: group.agentwireAgentId,
+      skills: group.skills || [],
+    });
+  }
+
+  const agentsFile = path.join(groupIpcDir, 'registered_agents.json');
+  fs.writeFileSync(
+    agentsFile,
+    JSON.stringify({ agents, lastSync: new Date().toISOString() }, null, 2),
+  );
+  ensureContainerWritable(agentsFile);
 }

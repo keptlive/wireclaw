@@ -55,6 +55,7 @@ beforeEach(() => {
     sendMessage: async () => {},
     sendEmailReply: async () => false,
     getReplyContext: () => undefined,
+    deliverMessage: () => {},
     registeredGroups: () => groups,
     registerGroup: (jid, group) => {
       groups[jid] = group;

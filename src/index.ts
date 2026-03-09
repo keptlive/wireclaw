@@ -18,6 +18,7 @@ import {
   ContainerOutput,
   runContainerAgent,
   writeGroupsSnapshot,
+  writeRegisteredAgentsSnapshot,
   writeSkillsSnapshot,
   writeTasksSnapshot,
 } from './container-runner.js';
@@ -315,6 +316,9 @@ async function runAgent(
 
   // Update skills snapshot (main sees all groups' skills)
   writeSkillsSnapshot(group.folder, isMain, registeredGroups);
+
+  // Update registered agents snapshot (main can discover other agents by handle)
+  writeRegisteredAgentsSnapshot(group.folder, isMain, registeredGroups);
 
   // Wrap onOutput to track session ID from streamed results
   const wrappedOnOutput = onOutput
@@ -643,6 +647,9 @@ async function main(): Promise<void> {
         (ch): ch is AgentWireChannel => ch instanceof AgentWireChannel,
       );
       return awChannel?.getReplyContext(jid);
+    },
+    deliverMessage: (jid, msg) => {
+      storeMessage(msg);
     },
     registeredGroups: () => registeredGroups,
     registerGroup,

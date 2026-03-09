@@ -84,6 +84,9 @@ export class AgentWireChannel implements Channel {
   private replyContexts = new Map<string, ReplyContext>(); // jid → last inbound context
   private syncInterval: ReturnType<typeof setInterval> | null = null;
   private readonly maxReconnectDelay = 60000;
+  // Track recently posted talk page messages to filter self-echoes
+  private recentPosts = new Map<string, number>(); // content hash → timestamp
+  private readonly echoWindowMs = 30_000; // ignore echoes within 30s
 
   constructor(apiKey: string, baseUrl: string, opts: ChannelOpts) {
     this.apiKey = apiKey;
@@ -296,6 +299,13 @@ export class AgentWireChannel implements Channel {
       case 'notifications/sms/inbound': {
         const sms = params as unknown as SmsNotification;
         if (sms.status !== 'DELIVERED') return;
+        // Filter self-echoes: when we post to talk page, AgentWire echoes it
+        // back as an inbound sms from 'voice:web'. Skip if content matches
+        // something we recently posted.
+        if (sms.from === 'voice:web' && this.isRecentPost(jid, sms.body)) {
+          logger.debug({ handle: conn.handle }, 'Filtered talk page self-echo');
+          return;
+        }
         this.replyContexts.set(jid, {
           type: sms.from === 'voice:web' ? 'talk' : 'sms',
           from: sms.from,
@@ -444,10 +454,43 @@ export class AgentWireChannel implements Channel {
         return;
       }
 
+      // Track this post so we can filter the echo when it comes back
+      this.trackPost(jid, trimmed);
+
       logger.info({ handle, length: text.length }, 'AgentWire message posted');
     } catch (err) {
       logger.error({ handle, err }, 'Failed to post AgentWire message');
     }
+  }
+
+  /**
+   * Hash content for echo detection. Uses first 200 chars trimmed
+   * to avoid matching on whitespace/formatting differences.
+   */
+  private contentKey(jid: string, content: string): string {
+    return `${jid}:${content.trim().slice(0, 200)}`;
+  }
+
+  /** Record a talk page post so we can filter its echo */
+  private trackPost(jid: string, content: string): void {
+    const key = this.contentKey(jid, content);
+    this.recentPosts.set(key, Date.now());
+    // Prune old entries
+    const cutoff = Date.now() - this.echoWindowMs;
+    for (const [k, ts] of this.recentPosts) {
+      if (ts < cutoff) this.recentPosts.delete(k);
+    }
+  }
+
+  /** Check if an inbound message is a self-echo of a recent post */
+  private isRecentPost(jid: string, content: string): boolean {
+    const key = this.contentKey(jid, content);
+    const ts = this.recentPosts.get(key);
+    if (ts && Date.now() - ts < this.echoWindowMs) {
+      this.recentPosts.delete(key); // One-time match
+      return true;
+    }
+    return false;
   }
 
   /** Get the current reply context for a JID (used by container-runner) */

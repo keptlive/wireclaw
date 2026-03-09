@@ -490,6 +490,71 @@ After deployment, assign it to agents using manage_skills.`,
   },
 );
 
+server.tool(
+  'send_to_agent',
+  `Send a message to another agent by handle. Main group only.
+
+This delivers the message as if it came from an external source, triggering the target agent's container.
+Read /workspace/ipc/registered_agents.json to discover available agents and their handles.
+
+Example: send_to_agent({ target_handle: "research", text: "Please analyze the latest papers on..." })`,
+  {
+    target_handle: z.string().describe('Handle of the target agent (e.g. "research")'),
+    text: z.string().describe('Message to send to the agent'),
+  },
+  async (args) => {
+    if (!isMain) {
+      return {
+        content: [{ type: 'text' as const, text: 'Only the main group can send messages to other agents.' }],
+        isError: true,
+      };
+    }
+
+    // Look up target JID from registered_agents.json
+    const agentsFile = path.join(IPC_DIR, 'registered_agents.json');
+    if (!fs.existsSync(agentsFile)) {
+      return {
+        content: [{ type: 'text' as const, text: 'registered_agents.json not found. Wait for next container invocation.' }],
+        isError: true,
+      };
+    }
+
+    let targetJid: string | null = null;
+    try {
+      const data = JSON.parse(fs.readFileSync(agentsFile, 'utf-8'));
+      const agent = data.agents?.find((a: { handle: string }) => a.handle === args.target_handle);
+      if (agent) targetJid = agent.jid;
+    } catch {
+      return {
+        content: [{ type: 'text' as const, text: 'Failed to read registered_agents.json.' }],
+        isError: true,
+      };
+    }
+
+    if (!targetJid) {
+      return {
+        content: [{ type: 'text' as const, text: `Agent "${args.target_handle}" not found. Check registered_agents.json for available agents.` }],
+        isError: true,
+      };
+    }
+
+    const ipcData = {
+      type: 'send_to_agent',
+      targetJid,
+      targetHandle: args.target_handle,
+      text: args.text,
+      senderHandle: groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(TASKS_DIR, ipcData);
+
+    return {
+      content: [{ type: 'text' as const, text: `Message sent to ${args.target_handle}.` }],
+    };
+  },
+);
+
 // Reply context from environment (set by agent-runner based on inbound channel)
 const replyType = process.env.WIRECLAW_REPLY_TYPE || '';
 const replyFrom = process.env.WIRECLAW_REPLY_FROM || '';

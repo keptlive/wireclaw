@@ -23,10 +23,7 @@ import {
 import { AW_JID_PREFIX, sanitizeHeader } from './channels/agentwire.js';
 import type { ReplyContext } from './channels/agentwire.js';
 import { readEnvFile } from './env.js';
-import {
-  isValidGroupFolder,
-  resolveGroupFolderPath,
-} from './group-folder.js';
+import { isValidGroupFolder, resolveGroupFolderPath } from './group-folder.js';
 import { logger } from './logger.js';
 import { applyManifest } from './manifest.js';
 import { RegisteredGroup } from './types.js';
@@ -85,6 +82,18 @@ export interface IpcDeps {
     body: string,
   ) => Promise<boolean>;
   getReplyContext: (jid: string) => ReplyContext | undefined;
+  deliverMessage: (
+    jid: string,
+    msg: {
+      id: string;
+      chat_jid: string;
+      sender: string;
+      sender_name: string;
+      content: string;
+      timestamp: string;
+      is_from_me: boolean;
+    },
+  ) => void;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroups: (force: boolean) => Promise<void>;
@@ -337,6 +346,10 @@ export async function processTaskIpc(
     // For deploy_skill
     skill_name?: string;
     source_path?: string;
+    // For send_to_agent
+    text?: string;
+    targetHandle?: string;
+    senderHandle?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -726,11 +739,17 @@ export async function processTaskIpc(
         break;
       }
 
-      if (data.skill_name && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(data.skill_name)) {
+      if (
+        data.skill_name &&
+        /^[a-z0-9][a-z0-9_-]{0,63}$/.test(data.skill_name)
+      ) {
         // Look for skill in shared workspace first, then group workspace
         const sharedSkillDir = path.join(SHARED_DIR, 'skills', data.skill_name);
         const groupSkillDir = data.source_path
-          ? path.join(resolveGroupFolderPath(sourceGroup), path.basename(data.source_path))
+          ? path.join(
+              resolveGroupFolderPath(sourceGroup),
+              path.basename(data.source_path),
+            )
           : null;
         const sourceDir = fs.existsSync(sharedSkillDir)
           ? sharedSkillDir
@@ -797,6 +816,45 @@ export async function processTaskIpc(
         }
       } else {
         logger.warn({ data }, 'update_skills: missing handle or skills array');
+      }
+      break;
+
+    case 'send_to_agent':
+      // Main only: deliver a message to another agent's queue
+      if (!isMain) {
+        logger.warn(
+          { sourceGroup },
+          'Unauthorized send_to_agent attempt blocked',
+        );
+        break;
+      }
+      if (data.targetJid && data.text) {
+        const targetGroup = deps.registeredGroups()[data.targetJid];
+        if (!targetGroup) {
+          logger.warn(
+            { targetJid: data.targetJid },
+            'send_to_agent: target group not found',
+          );
+          break;
+        }
+        const msgId = `ipc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        deps.deliverMessage(data.targetJid, {
+          id: msgId,
+          chat_jid: data.targetJid,
+          sender: `${data.senderHandle || sourceGroup}@wireclaw`,
+          sender_name: data.senderHandle || sourceGroup,
+          content: `[From agent ${data.senderHandle || sourceGroup}] ${data.text}`,
+          timestamp: new Date().toISOString(),
+          is_from_me: false,
+        });
+        logger.info(
+          {
+            from: sourceGroup,
+            to: data.targetHandle,
+            targetJid: data.targetJid,
+          },
+          'Inter-agent message delivered',
+        );
       }
       break;
 
