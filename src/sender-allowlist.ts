@@ -160,7 +160,7 @@ export function isTrustedSender(
     if (pattern.includes('*')) {
       // Simple glob: *@domain.com matches any sender at that domain
       const regex = new RegExp(
-        '^' + pattern.replace(/\*/g, '.*') + '$',
+        '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$',
       );
       return regex.test(senderLower);
     }

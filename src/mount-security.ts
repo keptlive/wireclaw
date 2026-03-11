@@ -156,7 +156,7 @@ function matchesBlockedPattern(
   for (const pattern of blockedPatterns) {
     // Check if any path component matches the pattern
     for (const part of pathParts) {
-      if (part === pattern || part.includes(pattern)) {
+      if (part === pattern || part.startsWith(pattern + '/')) {
         return pattern;
       }
     }

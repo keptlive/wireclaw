@@ -240,6 +240,17 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     await deps.sendMessage(data.chatJid, data.text);
                   } else {
                     // Non-email reply: route to talk page / channel
+                    if (storedCtx && storedCtx.type !== data.replyType) {
+                      logger.warn(
+                        {
+                          chatJid: data.chatJid,
+                          sourceGroup,
+                          claimedType: data.replyType,
+                          actualType: storedCtx.type,
+                        },
+                        'IPC reply context type mismatch, routing to talk page',
+                      );
+                    }
                     await deps.sendMessage(data.chatJid, data.text);
                     logger.info(
                       {
@@ -861,7 +872,10 @@ export async function processTaskIpc(
     case 'self_reminder': {
       // Agent-initiated reminder: schedule a delayed IPC reminder injection
       if (data.text && data.groupFolder) {
-        const delayMs = ((data as { delay_seconds?: number }).delay_seconds || 60) * 1000;
+        const MAX_REMINDER_DELAY_S = 604800; // 7 days
+        const rawDelay = (data as { delay_seconds?: number }).delay_seconds || 60;
+        const clampedDelay = Math.min(Math.max(rawDelay, 1), MAX_REMINDER_DELAY_S);
+        const delayMs = clampedDelay * 1000;
         const category = (data as { category?: string }).category || 'self';
         const groupFolder = data.groupFolder;
 
